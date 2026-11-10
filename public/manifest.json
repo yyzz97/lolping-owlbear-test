@@ -1,10 +1,10 @@
 {
-  "name": "LOL Ping Wheel",
-  "version": "1.0.26",
+  "name": "LOL Ping Wheel · 测试版",
+  "version": "1.0.27-beta.1",
   "manifest_version": 1,
-  "description": "Eight-direction League-style map signals and center Caution for Owlbear Rodeo.",
+  "description": "测试版：信号音量调整与用户屏蔽设置。Independent test channel for volume and player blocking.",
   "author": "yyzz97",
-  "homepage_url": "https://github.com/yyzz97/lolping-owlbear",
+  "homepage_url": "https://github.com/yyzz97/lolping-owlbear-test",
   "icon": "/wheel.svg",
   "background_url": "/index.html",
   "permissions": [

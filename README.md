@@ -1,11 +1,19 @@
-# lolPing Signal Wheel for Owlbear Rodeo 2
+# LOL Ping Wheel — Test channel
+
+This repository publishes the independent test extension at <https://yyzz97.github.io/lolping-owlbear-test/manifest.json>. It is based on production 1.0.26 (e8423f0) with personal volume and signal blocking settings. Production remains at <https://yyzz97.github.io/lolping-owlbear/manifest.json> and is not deployed by this repository.
+
+Select the wheel tool, then choose **普通轮盘信号** or **设置** in the top bar. Volume ranges from 0% to 120%; the default 100% is 80% of the previous release's volume. Dragging within 97–103% snaps to 100%, while keyboard arrows retain 1% adjustment. At 0%, markers remain visible silently.
+
+Block all other users or select individual users to hide their markers and sounds. Preferences save in this browser per room and player and survive refresh. Blocked users stay blocked after renaming or reconnecting; offline blocked users remain available for unblocking. Your own signals still send normally.
+
+The test extension has separate tool IDs, scene metadata, storage keys and broadcast channels. Install this test manifest on every participating test client; use it in a test room with the production extension disabled to avoid competing G shortcuts. The remaining sections describe the inherited wheel interaction.
 
 This is a standalone Owlbear Rodeo 2 extension built with `@owlbear-rodeo/sdk`. It registers an Owlbear toolbar tool with `OBR.tool.create` and `OBR.tool.createMode`, then sends room pings through Owlbear's broadcast API. It is not a Foundry VTT module or a Foundry adapter.
 
 ## Use
 
-1. In Owlbear Rodeo, add this production manifest URL: <https://yyzz97.github.io/lolping-owlbear/manifest.json>. For development, run `npm run dev` and add the local Vite URL's `/manifest.json`.
-2. In the room, open the Extensions menu and enable **LOL Ping Wheel**.
+1. In Owlbear Rodeo, add this test manifest URL: <https://yyzz97.github.io/lolping-owlbear-test/manifest.json>. For development, run `npm run dev` and add the local Vite URL's `/manifest.json`.
+2. In the test room, open the Extensions menu and enable **LOL Ping Wheel · 测试版**.
 3. The normal gesture does not require manually selecting the extension tool: hold **G** and the left mouse button on the map, drag toward one of eight signals, then release the left button to send it. Owlbear temporarily routes the map gesture through the extension and restores the previously active tool when **G** is released. Releasing in the center sends **谨慎行事**; release **G** or press **Esc** to cancel. Selecting the toolbar tool remains available for users who prefer it.
 4. Everyone in the same room with the extension enabled sees the same scene-point ping and a Chinese sender message. Signals stack when they overlap and remain visible for two seconds. A player can send at most four signals in five seconds; the fifth attempt starts a twelve-second cooldown.
 

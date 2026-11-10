@@ -1,11 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { registerExtension, ACTION_ID, CHANNEL, DISPLAY_MS, EXTENSION_ID } from '../src/extension.js';
+import { registerExtension, ACTION_ID, CHANNEL, DISPLAY_MS, EXTENSION_ID, MODE_ID, SETTINGS_ID, TOOL_ID } from '../src/extension.js';
 import { uiAssetsFor } from '../src/ui-assets.js';
+import { normalizeSettings, settingsKey } from '../src/settings.js';
 
 const TEST_WHEEL_ICON = 'https://static.example.test/wheel.svg';
 const TEST_UI_ASSETS = uiAssetsFor('https://static.example.test/');
-const TEST_SIGNAL_ASSETS = { caution: { audioUrl: 'https://static.example.test/Caution_ping_SFX.ogg' } };
+const TEST_SIGNAL_ASSETS = {
+  caution: { audioUrl: 'https://static.example.test/Caution_ping_SFX.ogg' },
+  omw: { audioUrl: 'https://static.example.test/On_My_Way_ping_SFX.ogg' },
+};
 
 function billboardBuilder() {
   return ({ width, height, mime, url }, grid) => {
@@ -65,6 +69,7 @@ function makeOwlbear(scale = 2, {
   const registeredTools = new Map();
   const listeners = [];
   const notifications = [];
+  const popovers = new Map();
   const obr = {
     player: { id: 'alice', getName: async () => 'Alice', getConnectionId: async () => 'alice-connection' },
     room: { id: 'room-1' },
@@ -83,6 +88,10 @@ function makeOwlbear(scale = 2, {
       async removeMode(id) { modes.delete(id); },
       async removeAction(id) { registeredTools.delete(id); },
     },
+    popover: {
+      async open(popover) { popovers.set(popover.id, popover); },
+      async close(id) { popovers.delete(id); },
+    },
     notification: {
       async show(message, variant) { notifications.push({ message, variant }); },
     },
@@ -91,7 +100,7 @@ function makeOwlbear(scale = 2, {
       async inverseTransformPoint(point) { return point; },
     },
     party: {
-      async getPlayers() { return [{ connectionId: 'bob-connection', name: 'Bob' }]; },
+      async getPlayers() { return [{ id: 'bob', connectionId: 'bob-connection', name: 'Bob' }]; },
       onChange(callback) { listeners.push(callback); return () => {}; },
     },
     broadcast: {
@@ -131,7 +140,7 @@ function makeOwlbear(scale = 2, {
     },
   };
   return {
-    obr, items, messages, removed, modes, registeredTools, listeners, notifications,
+    obr, items, messages, removed, modes, registeredTools, popovers, listeners, notifications,
     get onReady() { return onReady; },
     get messageHandler() { return messageHandler; },
     get sceneReadyHandler() { return sceneReadyHandler; },
@@ -159,6 +168,153 @@ async function setup(t, scale = 2, settings = {}) {
   if (settings.metadataWritable !== false) assert.ok(fake.metadata[EXTENSION_ID].sceneKey);
   return fake;
 }
+
+function settingsStorage(t, initial) {
+  const previousStorage = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  const previousAdd = globalThis.addEventListener;
+  const previousRemove = globalThis.removeEventListener;
+  let settings = normalizeSettings(initial);
+  const handlers = new Set();
+  Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: {
+    getItem: key => key === settingsKey('room-1', 'alice') ? JSON.stringify(settings) : null,
+  } });
+  globalThis.addEventListener = (type, callback) => { if (type === 'storage') handlers.add(callback); };
+  globalThis.removeEventListener = (type, callback) => { if (type === 'storage') handlers.delete(callback); };
+  t.after(() => {
+    if (previousStorage) Object.defineProperty(globalThis, 'localStorage', previousStorage);
+    else delete globalThis.localStorage;
+    if (previousAdd === undefined) delete globalThis.addEventListener;
+    else globalThis.addEventListener = previousAdd;
+    if (previousRemove === undefined) delete globalThis.removeEventListener;
+    else globalThis.removeEventListener = previousRemove;
+  });
+  return value => {
+    settings = normalizeSettings(value);
+    for (const handler of handlers) handler({ key: settingsKey('room-1', 'alice') });
+  };
+}
+
+function sendRemote(fake, userId = 'bob', connectionId = 'bob-connection') {
+  fake.messageHandler({ connectionId, data: {
+    v: 1, type: 'ping', eventId: crypto.randomUUID(), userId,
+    sceneKey: fake.metadata[EXTENSION_ID].sceneKey, signalId: 'omw', x: 40, y: 80,
+  } });
+}
+
+test('settings action is scoped to the wheel and opens an anchored popover while cancelling a gesture', async t => {
+  const fake = await setup(t);
+  const action = fake.registeredTools.get(SETTINGS_ID);
+  assert.deepEqual(action.icons[0].filter, { activeTools: [TOOL_ID] });
+  assert.equal(action.icons[0].label, '设置');
+  const mode = fake.modes.get(MODE_ID);
+  assert.equal(mode.icons[0].label, '普通轮盘信号');
+  mode.onToolDown({}, event(0, 0));
+  await flush();
+  assert.ok(fake.items.size > 0);
+  action.onClick({}, 'settings-button');
+  await flush();
+  assert.equal(fake.items.size, 0);
+  assert.equal(fake.messages.length, 0);
+  assert.equal(fake.popovers.get(SETTINGS_ID).anchorElementId, 'settings-button');
+  assert.equal(fake.popovers.get(SETTINGS_ID).url, 'index.html?view=settings');
+});
+
+test('block all hides remote pings and sounds while own pings still display and broadcast', async t => {
+  settingsStorage(t, { blockAll: true });
+  const previousAudio = globalThis.Audio;
+  const played = [];
+  globalThis.Audio = class { constructor() { played.push(this); } play() { return Promise.resolve(); } };
+  t.after(() => {
+    if (previousAudio === undefined) delete globalThis.Audio;
+    else globalThis.Audio = previousAudio;
+  });
+  const fake = await setup(t, 2);
+  sendRemote(fake);
+  sendRemote(fake, 'unknown', 'unknown-connection');
+  await flush();
+  assert.equal(fake.items.size, 0);
+  assert.equal(played.length, 0);
+  const mode = fake.modes.get(MODE_ID);
+  mode.onToolDown({}, event(0, 0));
+  await flush();
+  mode.onToolUp({}, event(200, 0));
+  await flush();
+  assert.equal(fake.items.size, 2);
+  assert.equal(fake.messages.length, 1);
+  assert.equal(played.length, 1);
+  assert.equal(played[0].volume, 0.72 * 0.8);
+});
+
+test('individual blocking uses host player IDs and survives renamed and reconnected users', async t => {
+  settingsStorage(t, { blockedUsers: [{ id: 'bob', name: 'Bob' }] });
+  const fake = await setup(t);
+  sendRemote(fake, 'spoofed-id');
+  await flush();
+  assert.equal(fake.items.size, 0, 'a payload user ID cannot bypass a known blocked connection');
+  fake.listeners[0]([
+    { id: 'bob', connectionId: 'bob-reconnected', name: 'Renamed Bob' },
+    { id: 'carol', connectionId: 'carol-connection', name: 'Carol' },
+  ]);
+  sendRemote(fake, 'bob', 'bob-reconnected');
+  sendRemote(fake, 'carol', 'carol-connection');
+  await flush();
+  assert.equal(fake.items.size, 2);
+  assert.ok([...fake.items.values()].some(item => item.text?.plainText.includes('Carol')));
+});
+
+test('changing settings removes blocked active pings and unblocking resumes receiving immediately', async t => {
+  const changeSettings = settingsStorage(t);
+  const fake = await setup(t);
+  sendRemote(fake);
+  await flush();
+  assert.equal(fake.items.size, 2);
+  changeSettings({ blockAll: true });
+  await flush();
+  assert.equal(fake.items.size, 0);
+  changeSettings({});
+  sendRemote(fake);
+  await flush();
+  assert.equal(fake.items.size, 2);
+});
+
+test('a remote ping awaiting grid lookup is cancelled when the sender becomes blocked', async t => {
+  const changeSettings = settingsStorage(t);
+  const fake = await setup(t);
+  let resolveScale;
+  fake.obr.scene.grid.getDpi = () => new Promise(resolve => { resolveScale = resolve; });
+  sendRemote(fake);
+  changeSettings({ blockedUsers: [{ id: 'bob', name: 'Bob' }] });
+  resolveScale(150);
+  await flush();
+  assert.equal(fake.items.size, 0);
+});
+
+test('zero volume keeps map markers and the default and maximum volume use the new baseline', async t => {
+  const changeSettings = settingsStorage(t, { volume: 0 });
+  const previousAudio = globalThis.Audio;
+  const played = [];
+  globalThis.Audio = class { constructor() { played.push(this); } play() { return Promise.resolve(); } };
+  t.after(() => {
+    if (previousAudio === undefined) delete globalThis.Audio;
+    else globalThis.Audio = previousAudio;
+  });
+  const fake = await setup(t, 2);
+  sendRemote(fake);
+  await flush();
+  assert.equal(fake.items.size, 2);
+  assert.equal(played.length, 0);
+  changeSettings({});
+  sendRemote(fake);
+  await flush();
+  assert.equal(played.length, 1);
+  assert.equal(played[0].volume, 0.72 * 0.8);
+  changeSettings({ volume: 120 });
+  sendRemote(fake);
+  await flush();
+  assert.equal(fake.items.size, 6);
+  assert.equal(played.length, 2);
+  assert.equal(played[1].volume, 0.72 * 0.8 * 1.2);
+});
 
 test('registers the toolbar and mode with the hosted wheel icon URL', async t => {
   const fake = await setup(t);

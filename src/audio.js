@@ -23,25 +23,27 @@ export async function unlockAudio() {
   }
 }
 
-export function playPing(signalId = 'omw', audioUrl = null) {
+export function playPing(signalId = 'omw', audioUrl = null, volume = 1) {
+  const level = Number.isFinite(volume) ? Math.min(1.2, Math.max(0, volume)) : 1;
+  if (level === 0) return null;
   if (audioUrl && typeof Audio !== 'undefined') {
     try {
       const audio = new Audio(audioUrl);
       audio.preload = 'auto';
-      audio.volume = 0.72;
+      audio.volume = 0.72 * 0.8 * level;
       const playback = audio.play();
       if (playback && typeof playback.catch === 'function') {
-        playback.catch(() => playSynthPing(signalId));
+        playback.catch(() => playSynthPing(signalId, level));
       }
       return audio;
     } catch {
       // Fall through to the local synthesized cue.
     }
   }
-  return playSynthPing(signalId);
+  return playSynthPing(signalId, level);
 }
 
-function playSynthPing(signalId = 'omw') {
+function playSynthPing(signalId = 'omw', volume = 1) {
   if (!context || context.state !== 'running') return null;
   const now = context.currentTime;
   const notes = PING_NOTES[signalId] ?? PING_NOTES.omw;
@@ -55,7 +57,7 @@ function playSynthPing(signalId = 'omw') {
     oscillator.frequency.setValueAtTime(frequency * 1.04, start);
     oscillator.frequency.exponentialRampToValueAtTime(frequency, start + 0.025);
     gain.gain.setValueAtTime(0.0001, start);
-    gain.gain.exponentialRampToValueAtTime(index === 0 ? 0.085 : 0.052, start + 0.009);
+    gain.gain.exponentialRampToValueAtTime((index === 0 ? 0.085 : 0.052) * 0.8 * volume, start + 0.009);
     gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
     oscillator.connect(gain).connect(context.destination);
     oscillator.start(start);

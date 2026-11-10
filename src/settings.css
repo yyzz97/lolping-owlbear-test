@@ -1,0 +1,28 @@
+.fvtt-lolping-settings {
+  box-sizing: border-box;
+  height: 100vh;
+  overflow: auto;
+  padding: 20px;
+  background: #172126;
+  color: #fff7e8;
+  font: 14px/1.5 "Noto Sans", sans-serif;
+  color-scheme: dark;
+  accent-color: #c8aa6e;
+}
+.fvtt-lolping-settings h1 { margin: 0 0 4px; font-size: 20px; }
+.fvtt-lolping-settings fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
+.fvtt-lolping-settings form { margin: 20px 0; }
+.fvtt-lolping-settings-hint { margin: 6px 0 14px; color: #b8c2c8; font-size: 12px; }
+.fvtt-lolping-settings-volume-label { display: flex; justify-content: space-between; gap: 12px; }
+.fvtt-lolping-settings output { color: #dfc797; font-variant-numeric: tabular-nums; }
+.fvtt-lolping-settings input[type="range"] { width: 100%; margin: 12px 0 0; }
+.fvtt-lolping-settings-volume-scale { display: grid; grid-template-columns: 1fr auto 16.667%; color: #b8c2c8; font-size: 11px; }
+.fvtt-lolping-settings-volume-scale span:last-child { text-align: right; }
+.fvtt-lolping-settings-row { display: flex; align-items: center; gap: 10px; min-height: 36px; cursor: pointer; }
+.fvtt-lolping-settings-row input { flex: 0 0 auto; width: 16px; height: 16px; margin: 0; }
+.fvtt-lolping-settings-row span { min-width: 0; overflow-wrap: anywhere; }
+.fvtt-lolping-settings #users { margin-top: 20px; padding-top: 16px; border-top: 1px solid #425057; }
+.fvtt-lolping-settings legend { padding: 0; font-weight: 600; }
+.fvtt-lolping-settings fieldset:disabled .fvtt-lolping-settings-row { opacity: 0.5; cursor: default; }
+.fvtt-lolping-settings input:focus-visible { outline: 2px solid #dfc797; outline-offset: 4px; }
+.fvtt-lolping-settings #settings-status { margin: 0; color: #dfc797; font-size: 12px; }

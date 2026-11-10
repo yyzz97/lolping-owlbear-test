@@ -20,6 +20,14 @@ const signalAssets = Object.freeze({
   caution: asset('Caution_ping'),
 });
 
-const uiAssets = uiAssetsFor(document.baseURI);
-void preloadImages(uiAssets);
-registerExtension(OBR, { buildBillboard, buildLabel, signalAssets, wheelIcon, uiAssets, version: packageJson.version });
+if (new URLSearchParams(window.location.search).get('view') === 'settings') {
+  void import('./settings-ui.js').then(({ registerSettingsPanel }) => registerSettingsPanel(OBR));
+} else {
+  const uiAssets = uiAssetsFor(document.baseURI);
+  void preloadImages(uiAssets);
+  registerExtension(OBR, {
+    buildBillboard, buildLabel, signalAssets, wheelIcon, uiAssets, version: packageJson.version,
+    settingsIcon: new URL('./settings.svg', document.baseURI).href,
+    settingsUrl: new URL('./index.html?view=settings', document.baseURI).href,
+  });
+}

@@ -1,6 +1,6 @@
 {
-  "name": "lolping-owlbear",
-  "version": "1.0.26",
+  "name": "lolping-owlbear-test",
+  "version": "1.0.27-beta.1",
   "private": true,
   "type": "module",
   "scripts": {

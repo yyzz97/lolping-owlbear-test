@@ -7,8 +7,8 @@ test('manifest identifies the Owlbear extension and local resource paths', async
   const manifest = JSON.parse(await readFile(new URL('../public/manifest.json', import.meta.url), 'utf8'));
 
   assert.equal(manifest.manifest_version, 1);
-  assert.equal(manifest.homepage_url, 'https://github.com/yyzz97/lolping-owlbear');
-  assert.equal(manifest.name, 'LOL Ping Wheel');
+  assert.equal(manifest.homepage_url, 'https://github.com/yyzz97/lolping-owlbear-test');
+  assert.equal(manifest.name, 'LOL Ping Wheel · 测试版');
   assert.equal(manifest.author, 'yyzz97');
   assert.equal(manifest.version, packageJson.version);
   assert.equal(manifest.background_url, '/index.html');

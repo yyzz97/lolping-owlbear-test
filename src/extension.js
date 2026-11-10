@@ -2,10 +2,12 @@ import { DEFAULT_SIGNAL, SIGNALS, signalById } from './signals.js';
 import { WHEEL, pickSlice } from './geometry.js';
 import { createPing, parsePing } from './protocol.js';
 import { playPing, unlockAudio } from './audio.js';
+import { normalizeSettings, readSettings, settingsKey } from './settings.js';
 
-export const EXTENSION_ID = 'com.github.dmhpj.lolping-owlbear';
+export const EXTENSION_ID = 'com.github.dmhpj.lolping-owlbear-test';
 export const TOOL_ID = `${EXTENSION_ID}/tool`;
 export const MODE_ID = `${TOOL_ID}/mode`;
+export const SETTINGS_ID = `${TOOL_ID}/settings`;
 export const ACTION_ID = `${EXTENSION_ID}/shortcut`;
 export const CHANNEL = `${EXTENSION_ID}/pings`;
 export const DISPLAY_MS = 2000;
@@ -61,7 +63,7 @@ function makeBillboard(buildBillboard, image, point, width, dpi, itemType, name,
     .build();
 }
 
-export function registerExtension(OBR, { buildBillboard, buildLabel, signalAssets, wheelIcon, uiAssets, version = 'dev' }) {
+export function registerExtension(OBR, { buildBillboard, buildLabel, signalAssets, wheelIcon, uiAssets, version = 'dev', settingsIcon = wheelIcon, settingsUrl = 'index.html?view=settings' }) {
   let sceneKey = null;
   let sceneGeneration = 0;
   let gesture = null;
@@ -76,6 +78,7 @@ export function registerExtension(OBR, { buildBillboard, buildLabel, signalAsset
   let restoreTool = null;
   let lastActiveTool = null;
   let lastActiveMode = null;
+  let preferences = normalizeSettings(null);
   const unsubscribers = [];
 
   function deleteIds(ids) {
@@ -110,13 +113,17 @@ export function registerExtension(OBR, { buildBillboard, buildLabel, signalAsset
     localPings.clear();
   }
 
-  async function showPing(message, sender) {
+  function isBlocked(userId, remote) {
+    return remote && (preferences.blockAll || preferences.blockedUsers.some(user => user.id === userId));
+  }
+
+  async function showPing(message, sender, userId = OBR.player.id, remote = false) {
     const signal = signalById(message.signalId);
-    if (!signal || !ready || message.sceneKey !== sceneKey) return false;
+    if (!signal || !ready || message.sceneKey !== sceneKey || isBlocked(userId, remote)) return false;
     const key = sceneKey;
     const label = `${sender}${signal.message}`;
     const dpi = await OBR.scene.grid.getDpi();
-    if (!ready || key !== sceneKey) return false;
+    if (!ready || key !== sceneKey || isBlocked(userId, remote)) return false;
     const image = uiAssets.pings[signal.id];
     const point = { x: message.x, y: message.y };
     const icon = makeBillboard(buildBillboard, image, point, 200, dpi, 'ping', label,
@@ -138,11 +145,11 @@ export function registerExtension(OBR, { buildBillboard, buildLabel, signalAsset
     const items = [icon, text];
     const ids = items.map(item => item.id);
     const token = Symbol('ping');
-    const entry = { ids, timer: null };
+    const entry = { ids, timer: null, userId, remote };
     localPings.set(token, entry);
     // Native text avoids the host's image loader and its failure placeholder.
     void OBR.scene.local.addItems([items[0]]).then(() => {
-      if (!localPings.has(token) || !ready || message.sceneKey !== sceneKey) {
+      if (!localPings.has(token) || !ready || message.sceneKey !== sceneKey || isBlocked(userId, remote)) {
         localPings.delete(token);
         deleteIds(ids);
         return;
@@ -158,15 +165,19 @@ export function registerExtension(OBR, { buildBillboard, buildLabel, signalAsset
       localPings.delete(token);
       reportRenderError(OBR, error, version, '信号图标');
     });
-    await unlockAudio();
-    playPing(signal.id, signalAssets?.[signal.id]?.audioUrl);
+    if (preferences.volume > 0) {
+      await unlockAudio();
+      if (localPings.has(token) && ready && message.sceneKey === sceneKey && !isBlocked(userId, remote)) {
+        playPing(signal.id, signalAssets?.[signal.id]?.audioUrl, preferences.volume / 100);
+      }
+    }
     return true;
   }
 
   async function refreshParty() {
     try {
       const party = await OBR.party.getPlayers();
-      players = new Map(party.map(player => [player.connectionId, player.name || '房间玩家']));
+      players = new Map(party.map(player => [player.connectionId, player]));
     } catch {
       players.clear();
     }
@@ -285,7 +296,9 @@ export function registerExtension(OBR, { buildBillboard, buildLabel, signalAsset
   function receive(event) {
     const message = parsePing(event.data);
     if (!message || message.userId === OBR.player.id && event.connectionId === undefined) return;
-    void showPing(message, players.get(event.connectionId) ?? '房间玩家').catch(error => reportRenderError(OBR, error, version));
+    const sender = players.get(event.connectionId);
+    void showPing(message, sender?.name || '房间玩家', sender?.id ?? message.userId, true)
+      .catch(error => reportRenderError(OBR, error, version));
   }
 
   async function startScene(generation) {
@@ -367,6 +380,20 @@ export function registerExtension(OBR, { buildBillboard, buildLabel, signalAsset
 
   unsubscribers.push(OBR.onReady(async () => {
     if (closed) return;
+    const key = settingsKey(OBR.room.id, OBR.player.id);
+    preferences = readSettings(key);
+    const settingsChanged = event => {
+      if (event.key !== key && event.key !== null) return;
+      preferences = readSettings(key);
+      for (const [token, entry] of localPings) {
+        if (!isBlocked(entry.userId, entry.remote)) continue;
+        if (entry.timer) clearTimeout(entry.timer);
+        localPings.delete(token);
+        deleteIds(entry.ids);
+      }
+    };
+    globalThis.addEventListener?.('storage', settingsChanged);
+    unsubscribers.push(() => globalThis.removeEventListener?.('storage', settingsChanged));
     try {
       if (typeof OBR.tool.getActiveTool === 'function') lastActiveTool = await OBR.tool.getActiveTool();
       if (typeof OBR.tool.getActiveToolMode === 'function') lastActiveMode = await OBR.tool.getActiveToolMode();
@@ -377,7 +404,7 @@ export function registerExtension(OBR, { buildBillboard, buildLabel, signalAsset
     try {
       await OBR.tool.create({
         id: TOOL_ID,
-        icons: [{ icon: wheelIcon, label: '英雄联盟信号轮盘' }],
+        icons: [{ icon: wheelIcon, label: '英雄联盟信号轮盘 · 测试版' }],
         defaultMode: MODE_ID,
         shortcut: 'G',
       });
@@ -388,7 +415,7 @@ export function registerExtension(OBR, { buildBillboard, buildLabel, signalAsset
     try {
       await OBR.tool.createMode({
         id: MODE_ID,
-        icons: [{ icon: wheelIcon, label: '信号轮盘', filter: { activeTools: [TOOL_ID] } }],
+        icons: [{ icon: wheelIcon, label: '普通轮盘信号', filter: { activeTools: [TOOL_ID] } }],
         onToolClick: () => false,
         onToolDoubleClick: () => false,
         onToolDown: (_context, event) => { void begin(event); },
@@ -425,12 +452,30 @@ export function registerExtension(OBR, { buildBillboard, buildLabel, signalAsset
       return;
     }
 
-    void OBR.notification.show(`lolPing ${version} 信号轮盘已加载。`, 'SUCCESS').catch(() => {});
+    try {
+      await OBR.tool.createAction({
+        id: SETTINGS_ID,
+        icons: [{ icon: settingsIcon, label: '设置', filter: { activeTools: [TOOL_ID] } }],
+        onClick: (_context, elementId) => {
+          cancelWheel();
+          void OBR.popover.open({
+            id: SETTINGS_ID, url: settingsUrl, width: 340, height: 480,
+            anchorElementId: elementId,
+            anchorOrigin: { horizontal: 'RIGHT', vertical: 'BOTTOM' },
+            transformOrigin: { horizontal: 'RIGHT', vertical: 'TOP' },
+          }).catch(error => reportStartupError(OBR, '设置窗口打开', error));
+        },
+      });
+    } catch (error) {
+      reportStartupError(OBR, '设置入口注册', error);
+    }
+
+    void OBR.notification.show(`lolPing ${version} 测试版信号轮盘已加载。`, 'SUCCESS').catch(() => {});
 
     try {
       unsubscribers.push(OBR.broadcast.onMessage(CHANNEL, receive));
       unsubscribers.push(OBR.party.onChange(party => {
-        players = new Map(party.map(player => [player.connectionId, player.name || '房间玩家']));
+        players = new Map(party.map(player => [player.connectionId, player]));
       }));
       unsubscribers.push(OBR.scene.onReadyChange(sceneChanged));
       if (typeof OBR.tool.onToolChange === 'function') {
@@ -469,6 +514,8 @@ export function registerExtension(OBR, { buildBillboard, buildLabel, signalAsset
     cancelWheel();
     clearPings();
     for (const unsubscribe of unsubscribers) unsubscribe?.();
+    void OBR.popover.close(SETTINGS_ID).catch(() => {});
+    void OBR.tool.removeAction(SETTINGS_ID).catch(() => {});
     void OBR.tool.removeMode(MODE_ID).catch(() => {});
     void OBR.tool.removeAction(ACTION_ID).catch(() => {});
     void OBR.tool.remove(TOOL_ID).catch(() => {});
